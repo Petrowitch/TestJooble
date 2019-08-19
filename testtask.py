@@ -1,9 +1,16 @@
 # coding: utf-8
 import csv
+from contextlib import contextmanager
 import time
-# from os import path
 
-# import pandas
+@contextmanager
+def timer():
+    start_time = time.time()
+    try:
+        yield start_time
+    finally:
+        print("time spent {}".format(time.time() - start_time))
+
 
 # -----TSV----- #
 class SpecialTsvReader:
@@ -16,7 +23,6 @@ class SpecialTsvReader:
         self.values_n = len(values)
         self.data_type = data_type
         # self.column_names = [self.column_names[0], *(f'{self.column_names[1][:-1]}_{param_name}_{i}' for i in range(len(values)))]
-        # print(self.column_names)
 
     def __split_values(self, row):
         return (row[0], *(self.data_type(x) for x in row[1].split(',')[1:]))
@@ -45,6 +51,45 @@ class SpecialTsvWriter:
         self.__writer.writerow(values)
 
 
+# _____MEANS_____ #
+class GeneralMeanAccum:
+    step_n: int
+    values: list
+
+    def __init__(self, len: int):
+        self._values = [0]*len
+        self.step_n = 0
+
+    def add_values(self, new_values: list):
+        raise NotImplementedError()
+
+    @property
+    def values(self):
+        return self._values
+
+
+class AriphmeticMeanAccumulator(GeneralMeanAccum):
+    def add_values(self, new_values: list):
+        self.step_n += 1
+        self._values = list(map(
+            lambda old_mean, new_value: (old_mean + (new_value-old_mean)/self.step_n),
+            self._values, new_values
+        ))
+
+
+class StandartDeviationAccumulator(GeneralMeanAccum):
+    def add_values(self, new_values: list, old_means: list, new_means: list):
+        self.step_n += 1
+        self._values = list(map(
+            lambda deviation, value, old_mean, new_mean: deviation + (value-new_mean)*(value-old_mean),
+            self._values, new_values, old_means, new_means
+        ))
+
+    @property
+    def values(self):
+        return [(x/(self.step_n-1))**0.5 for x in self._values]
+
+
 # -----SCORES----- #
 class GeneralScore:
     data_type: type
@@ -69,18 +114,17 @@ class ZScore(GeneralScore):
 
     def train(self):
         reader = SpecialTsvReader(self.train_file_name, self.datatype)
-        sum = [0] * reader.values_n  # init sum
-        sqsum = [0] * reader.values_n
-        N = 0
+        mean = AriphmeticMeanAccumulator(reader.values_n)
+        std = StandartDeviationAccumulator(reader.values_n)
         for index, *values in reader:
-            sum = map(lambda x, y: x + y, sum, values)
-            sqsum = map(lambda x, y: x + (y ** 2), sqsum, values)
-            N += 1
-        self.mean = [el / N for el in sum]
-        self.std = list(map(lambda sqsumi, meani: ((sqsumi - (N * (meani ** 2))) / (N - 1)) ** 0.5, sqsum, self.mean))
+            old_means = mean.values
+            mean.add_values(values)
+            std.add_values(values, old_means, mean.values)
+        self.mean = mean.values
+        self.std = std.values
 
     def calculate(self):
-        reader = SpecialTsvReader(self.train_file_name, self.datatype)
+        reader = SpecialTsvReader(self.calculation_file_name, self.datatype)
         column_names = [reader.column_names[0],
                         *("feature_{}_stand_{}".format(reader.param_name, i) for i in range(reader.values_n)),
                         "max_feature_{}_index".format(reader.param_name),
@@ -94,7 +138,9 @@ class ZScore(GeneralScore):
 
 
 if __name__ == "__main__":
-    scorer = ZScore('train.tsv', 'test.tsv', 'test_proc.tsv')
-    scorer.train()
-    scorer.calculate()
+    scorer = ZScore('train.tsv', 'test big.tsv', 'test_proc.tsv')
+    with timer():
+        scorer.train()
+    with timer():
+        scorer.calculate()
 
