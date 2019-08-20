@@ -1,4 +1,5 @@
 import csv
+import time
 import random
 
 
@@ -18,7 +19,13 @@ class SpecialTsvWriter:
         
 writer = SpecialTsvWriter('testgen.tsv', ['id_job', 'features'])
 
-for i in range(10**10):
-    writer.write_values([
-        random.randint(10**19, 10**20),
-        ','.join(('3', *(str(random.randint(9000, 10001)) for x in range(256))))])
+start_time = time.time()
+last_time = start_time
+for i in range(100):   #range(10**10):
+    curr_time = time.time()
+    print("{}){}, {}".format(i, curr_time-start_time, curr_time-last_time))
+    last_time = curr_time
+    for j in range(1000):
+        writer.write_values([
+            random.randint(10**19, 10**20),
+            ','.join(('3', *(str(random.randint(9000, 10001)) for x in range(256))))])
